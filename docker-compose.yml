@@ -1,43 +1,41 @@
-#docker-compose
-version: "3.9"
-
 services:
-  backend:
-    container_name: 'botkit-backend'
-    build:
-      context: .
-    ports:
-      - "${PORT_CONTAINER:-3000}:${APP_PORT:-3000}"
-    env_file:
-      - .env
-    restart: always
-    networks:
-      - back
-      - default
 
-  mongo:
-    container_name: 'botkit-mongodb'
-    image: mongo:latest
+  mongodb:
+    image: mongo
     restart: always
-    env_file:
-      - .env
-    ports:
-      - "27017:${MONGO_PORT:-27017}"
+    environment:
+      - MONGO_INITDB_DATABASE=${DB_NAME:-reservation_db}
+      - MONGO_INITDB_ROOT_USERNAME=${DB_USERNAME:-root}
+      - MONGO_INITDB_ROOT_PASSWORD=${DB_PASSWORD:-password}
     volumes:
-      - db_data:/data/db
-      - db_config:/data/configdb
-    networks:
-      - back
-    command: ["--replSet", "${DB_REPLICATION_SET:-rs01}", "--bind_ip_all"]
-    healthcheck:
-      test: mongosh --eval "rs.initiate()"
-      start_period: 5s
+      - ./db/mongo:/data/db
+      - ./initdb.d/:/docker-entrypoint-initdb.d/
 
-networks:
-  back:
-    driver: bridge
-    internal: true
+  mongo_express:
+    image: mongo-express
+    restart: always
+    ports:
+      - ${MONGO_EXPRESS_PORT:-8086}:8081
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${DB_USERNAME:-root}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${DB_PASSWORD:-password}
+    depends_on:
+      - mongodb
 
-volumes:
-  db_data:
-  db_config:
+  reservation_service:
+    image: node:18.16
+    volumes:
+      - ./reservation_service/app:/app
+    working_dir: /app
+    environment:
+      - PORT=80
+      - DB_URL=mongodb://${DB_USERNAME:-root}:${DB_PASSWORD:-password}@mongodb:27017/${DB_NAME:-reservation_db}
+      - COOKIE_SECRET=${COOKIE_SECRET:-COOKIE_SECRET}
+      - IMAGES_UPLOAD_PATH=${IMAGES_UPLOAD_PATH}
+    ports:
+      - ${RESERVATION_SERVICE_PORT:-3005}:80
+    command: bash -c "npm install && npm run start:dev"
+    depends_on:
+      - mongodb
+
